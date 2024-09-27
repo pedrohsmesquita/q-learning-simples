@@ -231,8 +231,8 @@ bool isWithinLimits(int pos_r, int pos_c) {
 
 int reward(int pos) {
     if (grid[pos] == 1)
-        return 100;
-    return -1;
+        return 10;
+    return 0;
 }
 
 void updateQTable(const Entity& entity, int new_pos, int rwrd, Actions action) {
@@ -242,7 +242,7 @@ void updateQTable(const Entity& entity, int new_pos, int rwrd, Actions action) {
             new_state_max_val = getOperations[actn](states[new_pos]);
     }
 
-    setOperations[action](states[entity.state], getOperations[action](states[entity.state]) + ALPHA * ((double) rwrd + GAMMA
+    setOperations[action](states[entity.state],     ALPHA * ((double) rwrd + GAMMA
                                                     * new_state_max_val
                                                     - getOperations[action](states[entity.state])));
 }
