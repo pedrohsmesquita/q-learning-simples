@@ -1,11 +1,13 @@
 #include <iostream>
 #include <random>
 #include <algorithm>
+#include <memory>
 #include <thread>
 #include <chrono>
 #include <string>
 
 constexpr int G_SIZE            { 3 }; 
+constexpr int REWARD_DEST       { 10 };
 constexpr int NUM_ACTIONS       { 4 }; 
 constexpr int EPSILON_GREEDY    { 100 };
 constexpr int TIME_MS           { 1 };
@@ -17,18 +19,6 @@ std::random_device rd;
 std::mt19937 gen(rd());
 std::uniform_int_distribution distrib(0,100);
 
-struct State {
-    double up;
-    double down;
-    double left;
-    double right;
-};
-
-struct Entity {
-    int state;
-    int destination;
-};
-
 enum Actions {
     UP,
     DOWN,
@@ -36,21 +26,56 @@ enum Actions {
     RIGHT
 };
 
-using StateGetVal = double(*)(const State&);
-using StateSetVal = void(*)(State&, double);
+struct Action {
+    double val;
+    Actions move;
+    State *node_s;
+    std::unique_ptr<Action> next;
+
+    double getVal() {
+        return val;
+    }
+
+    void setVal(double value) {
+        val = value;
+    }
+
+    Actions getMove() {
+        return move;
+    }
+
+    void setMove(Actions mv) {
+        move = mv;
+    }
+
+    Action(State *state_ptr, Actions mv) : val { }, move { mv }, node_s { state_ptr }, next { nullptr } {}
+};
+
+struct State {
+    int reward;
+    std::unique_ptr<Action> head;
+
+    int getReward() {
+        return reward;
+    }
+
+    void setReward(int rwrd) {
+        reward = rwrd;
+    }
+
+    State() : reward { }, head { nullptr } {}
+};
+
+struct Entity {
+    int state;
+    int destination;
+};
 
 State states[G_SIZE * G_SIZE] {};
 
 int grid[G_SIZE * G_SIZE] = {0};
 
-double getStateUp(const State& obj);
-double getStateDown(const State& obj);
-double getStateLeft(const State& obj);
-double getStateRight(const State& obj);
-void setStateUp(State& obj, double val);
-void setStateDown(State& obj, double val);
-void setStateLeft(State& obj, double val);
-void setStateRight(State& obj, double val);
+void createAction(std::unique_ptr<Action>& head, State *state_ptr, Actions move);
 int getRandomNumber();
 void setDestination(Entity& entity);
 void clearConsole();
@@ -62,20 +87,6 @@ bool isWithinLimits(int pos_r, int pos_c);
 int reward(int pos);
 void updateQTable(const Entity& entity, int new_pos, int rwrd, Actions action);
 void qLearning(Entity& entity);
-
-StateGetVal getOperations[] = {
-    getStateUp,
-    getStateDown,
-    getStateLeft,
-    getStateRight
-};
-
-StateSetVal setOperations[] = {
-    setStateUp,
-    setStateDown,
-    setStateLeft,
-    setStateRight
-};
 
 int main(int argc, char **argv) {
     if (argc != 2) {
@@ -110,47 +121,50 @@ int main(int argc, char **argv) {
     }
     clearConsole();
 
-    for (int i = 0; i < G_SIZE * G_SIZE; i++) {
-        std::cout << "Estado " << i << ": ";
-        std::cout << getOperations[UP](states[i]) << " ";
-        std::cout << getOperations[DOWN](states[i]) << " ";
-        std::cout << getOperations[LEFT](states[i]) << " ";
-        std::cout << getOperations[RIGHT](states[i]) << std::endl;
-    }
+    // for (int i = 0; i < G_SIZE * G_SIZE; i++) {
+    //     std::cout << "Estado " << i << ": ";
+    //     std::cout << getOperations[UP](states[i]) << " ";
+    //     std::cout << getOperations[DOWN](states[i]) << " ";
+    //     std::cout << getOperations[LEFT](states[i]) << " ";
+    //     std::cout << getOperations[RIGHT](states[i]) << std::endl;
+    // }
     std::cout << "Destino: " << entity.destination << std::endl;
     return 0;
 }
 
-double getStateUp(const State& obj) {
-    return obj.up;
+void createAction(std::unique_ptr<Action>& head, State *state_ptr, Actions move) {
+    auto new_node = std::make_unique<Action>(state_ptr, move);
+    if(!head) {
+        head = std::move(new_node);
+        return ;
+    }
+    Action *current = head.get();
+    while (current->next)
+        current = current->next.get();
+    current->next = std::move(new_node);
 }
 
-double getStateDown(const State& obj) {
-    return obj.down;
-}
-
-double getStateLeft(const State& obj) {
-    return obj.left;
-}
-
-double getStateRight(const State& obj) {
-    return obj.right;
-}
-
-void setStateUp(State& obj, double val) {
-    obj.up = val;
-}
-
-void setStateDown(State& obj, double val) {
-    obj.down = val;
-}
-
-void setStateLeft(State& obj, double val) {
-    obj.left = val;
-}
-
-void setStateRight(State& obj, double val) {
-    obj.right = val;
+void setStateActions(Entity& entity) {
+    for (int r { }; r < G_SIZE; r++) {
+        for (int c { }; c < G_SIZE; c++) {
+            int pos = r * G_SIZE + c;
+            if (entity.destination == pos) {
+                continue;
+            }
+            if (r - 1 >= 0) {
+                createAction(states[pos].head, &states[(r - 1) * G_SIZE + c], UP);
+            }
+            if (r + 1 < G_SIZE) {
+                createAction(states[pos].head, &states[(r + 1) * G_SIZE + c], DOWN);
+            }
+            if (c - 1 >= 0) {
+                createAction(states[pos].head, &states[(c - 1) * G_SIZE + c], LEFT);
+            }
+            if (c + 1 < G_SIZE) {
+                createAction(states[pos].head, &states[(c + 1) * G_SIZE + c], RIGHT);
+            }
+        }
+    }
 }
 
 int getRandomNumber() {
@@ -161,6 +175,7 @@ void setDestination(Entity& entity) {
     int destination { getRandomNumber() % (G_SIZE*G_SIZE) };
     grid[destination] = 1;
     entity.destination = destination;
+    states[destination].setReward(REWARD_DEST);
 }
 
 void clearConsole() {
