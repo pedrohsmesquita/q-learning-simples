@@ -5,6 +5,7 @@
 #include <thread>
 #include <chrono>
 #include <string>
+#include <iomanip>
 
 constexpr int G_SIZE            { 3 }; 
 constexpr int REWARD_DEST       { 10 };
@@ -26,10 +27,12 @@ enum Actions {
     RIGHT
 };
 
+struct State;
+
 struct Action {
     double val;
     Actions move;
-    State *node_s;
+    State& node_s;
     std::unique_ptr<Action> next;
 
     double getVal() {
@@ -48,7 +51,7 @@ struct Action {
         move = mv;
     }
 
-    Action(State *state_ptr, Actions mv) : val { }, move { mv }, node_s { state_ptr }, next { nullptr } {}
+    Action(State& state_ref, Actions mv) : val { 0 }, move { mv }, node_s { state_ref }, next { nullptr } {}
 };
 
 struct State {
@@ -75,17 +78,18 @@ State states[G_SIZE * G_SIZE] {};
 
 int grid[G_SIZE * G_SIZE] = {0};
 
-void createAction(std::unique_ptr<Action>& head, State *state_ptr, Actions move);
-void setStateActions(Entity& entity);
+void printState();
+void createAction(std::unique_ptr<Action>& head, State& state_ref, Actions move);
+void setStateActions();
 int getRandomNumber();
 void setDestination(Entity& entity);
 void clearConsole();
 void updateGrid(const Entity& entity);
 void printGrid();
-Actions chooseAction(const State& state);
+Action *chooseAction(const State& state);
 int actionOnGrid(const Actions action, int& pos_r, int& pos_c);
 bool isWithinLimits(int pos_r, int pos_c);
-void updateQTable(const Entity& entity, int new_pos, int rwrd, Actions action);
+void updateQTable(int new_pos, Actions action);
 void qLearning(Entity& entity);
 
 int main(int argc, char **argv) {
@@ -93,7 +97,7 @@ int main(int argc, char **argv) {
         std::cout << "usage: {executable} <num_of_iterations>" << std::endl;
         return 1;
     }
-    int iterations {};
+    int iterations {1};
     try {
         iterations = std::stoi(argv[argc - 1]);
     } catch (const std::invalid_argument& e) {
@@ -107,6 +111,7 @@ int main(int argc, char **argv) {
     Entity entity;
 
     setDestination(entity);
+    setStateActions();
 
     for (int i = 0; i < iterations; i++) {;
         entity.state = entity.destination;
@@ -120,20 +125,32 @@ int main(int argc, char **argv) {
         qLearning(entity);
     }
     clearConsole();
-
-    // for (int i = 0; i < G_SIZE * G_SIZE; i++) {
-    //     std::cout << "Estado " << i << ": ";
-    //     std::cout << getOperations[UP](states[i]) << " ";
-    //     std::cout << getOperations[DOWN](states[i]) << " ";
-    //     std::cout << getOperations[LEFT](states[i]) << " ";
-    //     std::cout << getOperations[RIGHT](states[i]) << std::endl;
-    // }
+    printState();
     std::cout << "Destino: " << entity.destination << std::endl;
+
     return 0;
 }
 
-void createAction(std::unique_ptr<Action>& head, State *state_ptr, Actions move) {
-    auto new_node = std::make_unique<Action>(state_ptr, move);
+void printState() {
+    std::cout << "Estado\tUP\tDOWN\tLEFT\tRIGHT\n";
+    for (int i { 0 }; i < G_SIZE * G_SIZE; i++) {
+        std::cout << i << "\t";
+        Action *move = states[i].head.get();
+        for (Actions actn { }; actn <= RIGHT; actn = static_cast<Actions>(actn + 1)) {
+            if (move && actn == move->getMove()) {
+                std::cout << std::fixed << std::setprecision(4) << move->getVal() << "\t";
+                move = move->next.get();
+            } else {
+                std::cout << std::fixed << std::setprecision(4) << 0.0 << "\t";
+            }
+        }
+        std::cout << "\n";
+    }
+    std::cout << std::endl;
+}
+
+void createAction(std::unique_ptr<Action>& head, State& state_ref, Actions move) {
+    auto new_node = std::make_unique<Action>(state_ref, move);
     if(!head) {
         head = std::move(new_node);
         return ;
@@ -144,24 +161,21 @@ void createAction(std::unique_ptr<Action>& head, State *state_ptr, Actions move)
     current->next = std::move(new_node);
 }
 
-void setStateActions(Entity& entity) {
+void setStateActions() {
     for (int r { }; r < G_SIZE; r++) {
         for (int c { }; c < G_SIZE; c++) {
             int pos = r * G_SIZE + c;
-            if (entity.destination == pos) {
-                continue;
-            }
             if (r - 1 >= 0) {
-                createAction(states[pos].head, &states[(r - 1) * G_SIZE + c], UP);
+                createAction(states[pos].head, states[(r - 1) * G_SIZE + c], UP);
             }
             if (r + 1 < G_SIZE) {
-                createAction(states[pos].head, &states[(r + 1) * G_SIZE + c], DOWN);
+                createAction(states[pos].head, states[(r + 1) * G_SIZE + c], DOWN);
             }
             if (c - 1 >= 0) {
-                createAction(states[pos].head, &states[(c - 1) * G_SIZE + c], LEFT);
+                createAction(states[pos].head, states[(c - 1) * G_SIZE + c], LEFT);
             }
             if (c + 1 < G_SIZE) {
-                createAction(states[pos].head, &states[(c + 1) * G_SIZE + c], RIGHT);
+                createAction(states[pos].head, states[(c + 1) * G_SIZE + c], RIGHT);
             }
         }
     }
@@ -204,21 +218,28 @@ void printGrid() {
     std::cout << std::endl;
 }
 
-Actions chooseAction(const State& state) {
-    if (((double) getRandomNumber() / EPSILON_GREEDY) < EPSILON)
-        return (Actions) (getRandomNumber() % NUM_ACTIONS);
+Action *chooseAction(const State& state) {
+    static Action *raw_ptrs[NUM_ACTIONS];
+    int qtd {0};
+    Action *current { state.head.get() };
+    Action *max { current };
+    raw_ptrs[qtd++] = current;
 
-    Action *current = state.head.get();
-    Action *max = current;
     current = current->next.get();
-
     while (current) {
+        raw_ptrs[qtd++] = current;
         if (current->getVal() > max->getVal())
             max = current;
         current = current->next.get();
     }
 
-    return max->getMove();
+    current = raw_ptrs[getRandomNumber() % qtd];
+    std::fill(std::begin(raw_ptrs), std::end(raw_ptrs), nullptr);
+
+    if (((double) getRandomNumber() / EPSILON_GREEDY) < EPSILON)
+        return current;
+
+    return max;
 }
 
 int actionOnGrid(const Actions action, int& pos_r, int& pos_c) {
@@ -240,34 +261,29 @@ int actionOnGrid(const Actions action, int& pos_r, int& pos_c) {
     return pos_r * G_SIZE + pos_c;
 }
 
-bool isWithinLimits(int pos_r, int pos_c) {
-    return pos_r >= 0 && pos_r < G_SIZE && pos_c >= 0 && pos_c < G_SIZE;
-}
+void updateQTable(int new_pos, Action *actual_action) {
+    Action *current { states[new_pos].head.get() };
+    Action *max_action_new_state { current };
+    current = current->next.get();
 
-void updateQTable(const Entity& entity, int new_pos, int rwrd, Actions action) {
-    double new_state_max_val { getOperations[UP](states[new_pos]) };
-    for (Actions actn { DOWN }; actn <= RIGHT; actn = static_cast<Actions>(actn + 1)) {
-        if (getOperations[actn](states[new_pos]) > new_state_max_val)
-            new_state_max_val = getOperations[actn](states[new_pos]);
+    while (current) {
+        if (current->getVal() > max_action_new_state->getVal())
+            max_action_new_state = current;
+        current = current->next.get();
     }
 
-    setOperations[action](states[entity.state],     ALPHA * ((double) rwrd + GAMMA
-                                                    * new_state_max_val
-                                                    - getOperations[action](states[entity.state])));
+    actual_action->setVal(ALPHA * (states[new_pos].getReward() + GAMMA * max_action_new_state->getVal() - actual_action->getVal()));
 }
 
 void qLearning(Entity& entity) {
-    while (grid[entity.state] != 1) {
-        Actions action { chooseAction(states[entity.state]) };
+    while (entity.state != entity.destination) {
+        Action *state_action { chooseAction(states[entity.state]) };
         int pos_r { entity.state / G_SIZE };
         int pos_c { entity.state - pos_r * G_SIZE };
 
-        int new_pos { actionOnGrid(action, pos_r, pos_c) };
+        int new_pos { actionOnGrid(state_action->getMove(), pos_r, pos_c) };
 
-        if (!isWithinLimits(pos_r, pos_c))
-            continue;
-        int rwrd { states[new_pos].getReward() };
-        updateQTable(entity, new_pos, rwrd, action);
+        updateQTable(new_pos, state_action);
 
         entity.state = new_pos;
         clearConsole();
