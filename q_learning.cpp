@@ -85,7 +85,6 @@ void printGrid();
 Actions chooseAction(const State& state);
 int actionOnGrid(const Actions action, int& pos_r, int& pos_c);
 bool isWithinLimits(int pos_r, int pos_c);
-int reward(int pos);
 void updateQTable(const Entity& entity, int new_pos, int rwrd, Actions action);
 void qLearning(Entity& entity);
 
@@ -214,7 +213,7 @@ Actions chooseAction(const State& state) {
     current = current->next.get();
 
     while (current) {
-        if (current->getMove() > max->getMove())
+        if (current->getVal() > max->getVal())
             max = current;
         current = current->next.get();
     }
@@ -245,12 +244,6 @@ bool isWithinLimits(int pos_r, int pos_c) {
     return pos_r >= 0 && pos_r < G_SIZE && pos_c >= 0 && pos_c < G_SIZE;
 }
 
-int reward(int pos) {
-    if (grid[pos] == 1)
-        return 10;
-    return 0;
-}
-
 void updateQTable(const Entity& entity, int new_pos, int rwrd, Actions action) {
     double new_state_max_val { getOperations[UP](states[new_pos]) };
     for (Actions actn { DOWN }; actn <= RIGHT; actn = static_cast<Actions>(actn + 1)) {
@@ -273,7 +266,7 @@ void qLearning(Entity& entity) {
 
         if (!isWithinLimits(pos_r, pos_c))
             continue;
-        int rwrd { reward(new_pos) };
+        int rwrd { states[new_pos].getReward() };
         updateQTable(entity, new_pos, rwrd, action);
 
         entity.state = new_pos;
