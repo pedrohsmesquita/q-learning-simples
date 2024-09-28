@@ -76,13 +76,14 @@ State states[G_SIZE * G_SIZE] {};
 int grid[G_SIZE * G_SIZE] = {0};
 
 void createAction(std::unique_ptr<Action>& head, State *state_ptr, Actions move);
+void setStateActions(Entity& entity);
 int getRandomNumber();
 void setDestination(Entity& entity);
 void clearConsole();
 void updateGrid(const Entity& entity);
 void printGrid();
 Actions chooseAction(const State& state);
-int actionOnGrid(const Actions action, const Entity &entity, int& pos_r, int& pos_c);
+int actionOnGrid(const Actions action, int& pos_r, int& pos_c);
 bool isWithinLimits(int pos_r, int pos_c);
 int reward(int pos);
 void updateQTable(const Entity& entity, int new_pos, int rwrd, Actions action);
@@ -208,36 +209,36 @@ Actions chooseAction(const State& state) {
     if (((double) getRandomNumber() / EPSILON_GREEDY) < EPSILON)
         return (Actions) (getRandomNumber() % NUM_ACTIONS);
 
-    Actions best_action { UP };
-    for (Actions action { DOWN }; action <= RIGHT; action = static_cast<Actions>(action + 1)) {
-        if (getOperations[action](state) > getOperations[best_action](state))
-            best_action = action;
+    Action *current = state.head.get();
+    Action *max = current;
+    current = current->next.get();
+
+    while (current) {
+        if (current->getMove() > max->getMove())
+            max = current;
+        current = current->next.get();
     }
 
-    return best_action;
+    return max->getMove();
 }
 
-int actionOnGrid(const Actions action, const Entity &entity, int& pos_r, int& pos_c) {
-    int position_r { entity.state / G_SIZE };
-    int position_c { entity.state - position_r * G_SIZE };
-
+int actionOnGrid(const Actions action, int& pos_r, int& pos_c) {
     switch (action) {
     case UP:
-        position_r--;
+        pos_r--;
         break;
     case DOWN:
-        position_r++;
+        pos_r++;
         break;
     case LEFT:
-        position_c--;
+        pos_c--;
         break;
     case RIGHT:
-        position_c++;
+        pos_c++;
         break;
     }
-    pos_r = position_r;
-    pos_c = position_c;
-    return position_r * G_SIZE + position_c;
+
+    return pos_r * G_SIZE + pos_c;
 }
 
 bool isWithinLimits(int pos_r, int pos_c) {
@@ -265,9 +266,10 @@ void updateQTable(const Entity& entity, int new_pos, int rwrd, Actions action) {
 void qLearning(Entity& entity) {
     while (grid[entity.state] != 1) {
         Actions action { chooseAction(states[entity.state]) };
-        int pos_r, pos_c;
+        int pos_r { entity.state / G_SIZE };
+        int pos_c { entity.state - pos_r * G_SIZE };
 
-        int new_pos { actionOnGrid(action, entity, pos_r, pos_c) };
+        int new_pos { actionOnGrid(action, pos_r, pos_c) };
 
         if (!isWithinLimits(pos_r, pos_c))
             continue;
