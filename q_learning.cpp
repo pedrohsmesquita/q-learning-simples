@@ -56,6 +56,8 @@ struct Action {
 
 struct State {
     int reward;
+    bool initialState;
+    bool destState;
     std::unique_ptr<Action> head;
 
     int getReward() {
@@ -66,12 +68,30 @@ struct State {
         reward = rwrd;
     }
 
-    State() : reward { }, head { nullptr } {}
+    bool isInitialState() {
+        return initialState;
+    }
+
+    void setInitialState() {
+        initialState = !initialState;
+    }
+
+    bool isDestState() {
+        return destState;
+    }
+
+    void setDestState() {
+        destState = !destState;
+    }
+
+    State() : reward { }, initialState { false }, destState { false }, head { nullptr } {}
 };
 
 struct Entity {
-    int state;
-    int destination;
+    int pos;
+    State *actual_state;
+
+    Entity() : pos { -1 }, actual_state { nullptr } {}
 };
 
 State states[G_SIZE * G_SIZE] {};
@@ -82,7 +102,7 @@ void printState();
 void createAction(std::unique_ptr<Action>& head, State& state_ref, Actions move);
 void setStateActions();
 int getRandomNumber();
-void setDestination(Entity& entity);
+void setDestination();
 void clearConsole();
 void updateGrid(const Entity& entity);
 void printGrid();
@@ -97,7 +117,7 @@ int main(int argc, char **argv) {
         std::cout << "usage: {executable} <num_of_iterations>" << std::endl;
         return 1;
     }
-    int iterations {1};
+    int iterations { };
     try {
         iterations = std::stoi(argv[argc - 1]);
     } catch (const std::invalid_argument& e) {
@@ -110,29 +130,35 @@ int main(int argc, char **argv) {
     
     Entity entity;
 
-    setDestination(entity);
+    setDestination();
     setStateActions();
 
+    int old_initial_state {};
     for (int i = 0; i < iterations; i++) {;
-        entity.state = entity.destination;
-        while (entity.state == entity.destination) {
-            entity.state = getRandomNumber() % (G_SIZE * G_SIZE);
+        entity.pos = getRandomNumber() % (G_SIZE * G_SIZE);
+        entity.actual_state = &states[entity.pos];
+        while (entity.actual_state->isDestState()) {
+            entity.pos = getRandomNumber() % (G_SIZE * G_SIZE);
+            entity.actual_state = &states[entity.pos];
         }
+        old_initial_state = entity.pos;
+        entity.actual_state->setInitialState();
         clearConsole();
         updateGrid(entity);
         printGrid();
         std::this_thread::sleep_for(std::chrono::milliseconds(TIME_MS));
         qLearning(entity);
+        states[old_initial_state].setInitialState();
     }
+    states[old_initial_state].setInitialState();
     clearConsole();
     printState();
-    std::cout << "Destino: " << entity.destination << std::endl;
 
     return 0;
 }
 
 void printState() {
-    std::cout << "Estado\tUP\tDOWN\tLEFT\tRIGHT\n";
+    std::cout << "STATE\tUP\tDOWN\tLEFT\tRIGHT\tINITSTATE\tDESTSTATE\n";
     for (int i { 0 }; i < G_SIZE * G_SIZE; i++) {
         std::cout << i << "\t";
         Action *move = states[i].head.get();
@@ -144,6 +170,14 @@ void printState() {
                 std::cout << std::fixed << std::setprecision(4) << 0.0 << "\t";
             }
         }
+        if (states[i].isInitialState())
+            std::cout << "   yes\t";
+        else
+            std::cout << "   no\t";
+        if (states[i].isDestState())
+            std::cout << "\t   yes\t";
+        else
+            std::cout << "\t   no\t";
         std::cout << "\n";
     }
     std::cout << std::endl;
@@ -185,11 +219,11 @@ int getRandomNumber() {
     return distrib(gen);
 }
 
-void setDestination(Entity& entity) {
+void setDestination() {
     int destination { getRandomNumber() % (G_SIZE*G_SIZE) };
     grid[destination] = 1;
-    entity.destination = destination;
     states[destination].setReward(REWARD_DEST);
+    states[destination].setDestState();
 }
 
 void clearConsole() {
@@ -200,9 +234,9 @@ void updateGrid(const Entity& entity) {
     std::fill(std::begin(grid), std::end(grid), 0);
 
     for (int i { 0 }; i < G_SIZE * G_SIZE; i++) {
-        if (i == entity.destination)
+        if (states[i].isDestState())
             grid[i] = 1;
-        else if (i == entity.state)
+        else if (i == entity.pos)
             grid[i] = 4;
         else
             grid[i] = 0;
@@ -276,16 +310,17 @@ void updateQTable(int new_pos, Action *actual_action) {
 }
 
 void qLearning(Entity& entity) {
-    while (entity.state != entity.destination) {
-        Action *state_action { chooseAction(states[entity.state]) };
-        int pos_r { entity.state / G_SIZE };
-        int pos_c { entity.state - pos_r * G_SIZE };
+    while (!entity.actual_state->isDestState()) {
+        Action *state_action { chooseAction(*(entity.actual_state)) };
+        int pos_r { entity.pos / G_SIZE };
+        int pos_c { entity.pos - pos_r * G_SIZE };
 
         int new_pos { actionOnGrid(state_action->getMove(), pos_r, pos_c) };
 
         updateQTable(new_pos, state_action);
 
-        entity.state = new_pos;
+        entity.pos = new_pos;
+        entity.actual_state = &states[entity.pos];
         clearConsole();
         updateGrid(entity);
         printGrid();
